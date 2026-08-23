@@ -6,7 +6,6 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
     get_macro_indicators,
     get_news,
-    get_prediction_markets,
 )
 
 
@@ -17,16 +16,62 @@ def create_news_analyst(llm):
         asset_label = "company" if asset_type == "stock" else "asset"
         instrument_context = get_instrument_context_from_state(state)
 
+        # Must match the "news" ToolNode in graph/trading_graph.py: a bound tool
+        # the node cannot execute turns into a failed call, and the model then
+        # reports the data as unavailable.
         tools = [
             get_news,
             get_global_news,
             get_macro_indicators,
-            get_prediction_markets,
         ]
 
         system_message = (
-            f"You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(ticker, start_date, end_date) for {asset_label}-specific news by ticker symbol, get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news, get_macro_indicators(indicator, curr_date, look_back_days) to ground macro commentary in actual data from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', '10y_treasury', 'yield_curve'), and get_prediction_markets(topic, limit) for live market-implied probabilities of forward-looking events (e.g. 'Fed rate cut', 'recession 2026', geopolitical or sector events). Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
+            f"You are a news researcher covering the Vietnamese stock market (HOSE, HNX, "
+            f"UPCoM). Analyse the news and macro releases of the past week and write a "
+            f"comprehensive report on the state of the world as it bears on trading this "
+            f"{asset_label} and on Vietnamese macroeconomics.\n\n"
+            "TOOLS\n"
+            f"- get_news(ticker, start_date, end_date): news for this {asset_label} by ticker, "
+            "together with its industry and sector context (sector metrics and sector research).\n"
+            "- get_global_news(curr_date, look_back_days, limit): the macro backdrop — the "
+            "Vietnamese market and economy, plus the global picture (Fed policy, the dollar, "
+            "US yields, China demand, commodities) that reaches Vietnam through the exchange "
+            "rate, foreign flows and export orders. This is also where US and global figures "
+            "come from.\n"
+            "- get_macro_indicators(indicator, curr_date, look_back_days): dated Vietnamese "
+            "macro releases on one topic. The feed is VIETNAM-ONLY. Ask for: 'monetary_policy' "
+            "or 'sbv' (State Bank of Vietnam policy, open-market operations, system liquidity, "
+            "money supply), 'interest_rate' (policy, deposit, lending and interbank rates, "
+            "government bond yields), 'inflation' or 'cpi' (consumer prices), 'fx' or 'usdvnd' "
+            "(the exchange rate), 'gdp' (growth), 'pmi' or 'industrial_production' "
+            "(manufacturing), 'fdi' (registered and disbursed investment), 'trade', 'exports' "
+            "or 'trade_balance', 'retail_sales' (domestic consumption), and 'credit' or "
+            "'banking' (credit growth and the banking system). A US series — 'core_pce', "
+            "'unemployment', '10y_treasury', 'fed_funds_rate' — is not covered: the tool "
+            "answers with the general Vietnamese digest and says the series is missing. Take "
+            "that data from get_global_news instead.\n\n"
+            "WHAT MOVES THIS MARKET\n"
+            "Weigh, where the evidence supports it: SBV MONETARY POLICY (policy rates, "
+            "open-market operations and bill issuance, system liquidity, the credit-growth "
+            "quota); INTEREST RATES (deposit and lending rates, interbank overnight, "
+            "government bond yields); INFLATION (headline and core CPI against the year's "
+            "target); the USD/VND EXCHANGE RATE and SBV intervention, which drive foreign "
+            "flows; foreign investors' net buying or selling and the level of margin lending; "
+            "GDP growth, PMI, industrial production, retail sales, FDI, exports and the trade "
+            "balance; the public-investment, real-estate and corporate-bond cycles; and "
+            "market-structure news (listing and settlement rules, FTSE Russell "
+            "emerging-market reclassification). Connect each one to this ticker and its "
+            "sector — transmission, not a list.\n\n"
+            "DISCIPLINE\n"
+            "Cite concrete headlines with their dates and attribute every figure to the tool "
+            "that returned it. Knowledge-base excerpts are undated research: treat them as "
+            "background rather than breaking news. When a tool reports that data is "
+            "unavailable, say so in the report — do not substitute a remembered or estimated "
+            "number, and never carry a US figure over to Vietnam.\n\n"
+            "Provide specific, actionable insights with supporting evidence to help traders "
+            "make informed decisions. "
+            "Make sure to append a Markdown table at the end of the report to organize key "
+            "points in the report, organized and easy to read."
             + get_language_instruction()
         )
 
