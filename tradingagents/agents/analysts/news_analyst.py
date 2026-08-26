@@ -6,6 +6,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
     get_macro_indicators,
     get_news,
+    search_knowledge_base,
 )
 
 
@@ -23,6 +24,7 @@ def create_news_analyst(llm):
             get_news,
             get_global_news,
             get_macro_indicators,
+            search_knowledge_base,
         ]
 
         system_message = (
@@ -31,6 +33,11 @@ def create_news_analyst(llm):
             f"comprehensive report on the state of the world as it bears on trading this "
             f"{asset_label} and on Vietnamese macroeconomics.\n\n"
             "TOOLS\n"
+            "- search_knowledge_base(query, ticker=None): our own research library — "
+            "embedded Vietnamese research reports — searched on a question YOU write. "
+            f"Pass ticker=<SYMBOL> for research on this {asset_label}; omit ticker for "
+            "macro, strategy and sector questions. NO_KB_MATCH means we hold no "
+            "research answering that question.\n"
             f"- get_news(ticker, start_date, end_date): news for this {asset_label} by ticker, "
             "together with its industry and sector context (sector metrics and sector research).\n"
             "- get_global_news(curr_date, look_back_days, limit): the macro backdrop — the "
@@ -50,6 +57,17 @@ def create_news_analyst(llm):
             "'unemployment', '10y_treasury', 'fed_funds_rate' — is not covered: the tool "
             "answers with the general Vietnamese digest and says the series is missing. Take "
             "that data from get_global_news instead.\n\n"
+            "USING THE RESEARCH LIBRARY\n"
+            "search_knowledge_base is the one tool whose question is yours to write, so "
+            "write it well. Phrase every query in VIETNAMESE — the reports are "
+            "Vietnamese and an English query retrieves worse. Ask 2–4 narrow questions "
+            f"from different angles rather than one broad one: this {asset_label}'s "
+            "outlook and risks, its sector, and the macro or strategy view for the "
+            "period. Keep each query to the substance you want ('triển vọng lợi nhuận "
+            "ngành thép', not 'thông tin về HPG'), and rephrase a question once before "
+            "abandoning it if it returns NO_KB_MATCH. The library is background rather "
+            "than breaking news: get_news, get_global_news and get_macro_indicators "
+            "remain the source for dated events.\n\n"
             "WHAT MOVES THIS MARKET\n"
             "Weigh, where the evidence supports it: SBV MONETARY POLICY (policy rates, "
             "open-market operations and bill issuance, system liquidity, the credit-growth "

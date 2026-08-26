@@ -26,6 +26,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_stock_data,
     get_verified_market_snapshot,
     resolve_instrument_identity,
+    search_knowledge_base,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.config import set_config
@@ -214,6 +215,10 @@ class TradingAgentsGraph:
                     # get_insider_transactions,
                     get_macro_indicators,
                     # get_prediction_markets,
+                    # Our own research library, queried with the analyst's own
+                    # question (bound in news_analyst.py; must be executable
+                    # here or the call fails and the model calls it unavailable).
+                    search_knowledge_base,
                 ]
             ),
             "fundamentals": ToolNode(
