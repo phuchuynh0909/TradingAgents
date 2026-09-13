@@ -27,7 +27,6 @@ See: https://github.com/TauricResearch/TradingAgents/issues/796
 from datetime import datetime, timedelta
 
 from langchain_core.messages import AIMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.schemas import SentimentReport, render_sentiment_report
 from tradingagents.agents.utils.agent_utils import (
@@ -35,6 +34,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
     get_news,
 )
+from tradingagents.agents.utils.prompts import build_cache_friendly_prompt
 from tradingagents.agents.utils.structured import (
     NO_EXTERNAL_TOOLS,
     bind_structured,
@@ -80,23 +80,16 @@ def create_sentiment_analyst(llm):
             reddit_block=reddit_block,
         )
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful AI assistant, collaborating with other assistants."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
-                    # No tool-calling here: the data is pre-fetched into the
-                    # prompt, so tool-range wording would only invite a
-                    # hallucinated tool call (#1130).
-                    " Today's date is {current_date}; treat it as 'now' for all analysis. {instrument_context}"
-                    " " + NO_EXTERNAL_TOOLS +
-                    "\n{system_message}",
-                ),
-                MessagesPlaceholder(variable_name="messages"),
-            ]
+        runtime_context = (
+            "You are a helpful AI assistant, collaborating with other assistants."
+            " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
+            " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+            # No tool-calling here: the data is pre-fetched into the prompt, so
+            # tool-range wording would only invite a hallucinated tool call (#1130).
+            " Today's date is {current_date}; treat it as 'now' for all analysis. {instrument_context}"
+            " " + NO_EXTERNAL_TOOLS + "\n{system_message}"
         )
+        prompt = build_cache_friendly_prompt(SENTIMENT_INSTRUCTIONS, runtime_context)
 
         prompt = prompt.partial(system_message=system_message)
         prompt = prompt.partial(current_date=end_date)
@@ -123,42 +116,9 @@ def create_sentiment_analyst(llm):
     return sentiment_analyst_node
 
 
-def _build_system_message(
-    *,
-    ticker: str,
-    start_date: str,
-    end_date: str,
-    news_block: str,
-    stocktwits_block: str,
-    reddit_block: str,
-) -> str:
-    """Assemble the sentiment-analyst system message with structured data blocks."""
-    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
+SENTIMENT_INSTRUCTIONS = """You are a financial market sentiment analyst.
 
-## Data sources (pre-fetched, in this prompt)
-
-### News headlines — Yahoo Finance, past 7 days
-Institutional framing. Fact-driven, slower-moving signal.
-
-<start_of_news>
-{news_block}
-<end_of_news>
-
-### StockTwits messages — retail-trader social platform indexed by cashtag
-Fast-moving signal. Each message carries a user-labeled sentiment tag (Bullish / Bearish / no-label) plus the message body.
-
-<start_of_stocktwits>
-{stocktwits_block}
-<end_of_stocktwits>
-
-### Reddit posts — r/wallstreetbets, r/stocks, r/investing (past 7 days)
-Community discussion. Engagement signal via upvote score and comment count. Subreddit character matters (r/wallstreetbets is often contrarian/exuberant; r/stocks more measured; r/investing longer-term).
-
-<start_of_reddit>
-{reddit_block}
-<end_of_reddit>
-
-## How to analyze this data (best practices)
+## How to analyze the pre-fetched data (best practices)
 
 1. **Read the StockTwits Bullish/Bearish ratio as a leading retail-sentiment signal.** A 70/30 bullish/bearish split is moderately bullish; ≥90/10 may indicate over-extension and contrarian risk; 50/50 is uncertainty. Sample size matters — base rates on the actual message count, not percentages alone.
 
@@ -183,7 +143,43 @@ Fill the following fields:
 - **overall_band**: Exactly one of Bullish / Mildly Bullish / Neutral / Mixed / Mildly Bearish / Bearish. Use Mixed when sources point in clearly different directions; Neutral only when all sources are genuinely silent.
 - **overall_score**: A number from 0 (maximally bearish) to 10 (maximally bullish); 5 is neutral. Keep it consistent with overall_band.
 - **confidence**: low / medium / high, based on data quality and sample size.
-- **narrative**: Full source-by-source breakdown, divergences, dominant narrative themes, catalysts and risks, and a markdown summary table of key sentiment signals (direction, source, supporting evidence).
+- **narrative**: Full source-by-source breakdown, divergences, dominant narrative themes, catalysts and risks, and a markdown summary table of key sentiment signals (direction, source, supporting evidence)."""
+
+
+def _build_system_message(
+    *,
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    news_block: str,
+    stocktwits_block: str,
+    reddit_block: str,
+) -> str:
+    """Assemble the run-specific sentiment task and its pre-fetched data."""
+    return f"""Produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on these complementary pre-fetched data sources.
+
+## Data sources (pre-fetched, in this prompt)
+
+### News headlines — Yahoo Finance, past 7 days
+Institutional framing. Fact-driven, slower-moving signal.
+
+<start_of_news>
+{news_block}
+<end_of_news>
+
+### StockTwits messages — retail-trader social platform indexed by cashtag
+Fast-moving signal. Each message carries a user-labeled sentiment tag (Bullish / Bearish / no-label) plus the message body.
+
+<start_of_stocktwits>
+{stocktwits_block}
+<end_of_stocktwits>
+
+### Reddit posts — r/wallstreetbets, r/stocks, r/investing (past 7 days)
+Community discussion. Engagement signal via upvote score and comment count. Subreddit character matters (r/wallstreetbets is often contrarian/exuberant; r/stocks more measured; r/investing longer-term).
+
+<start_of_reddit>
+{reddit_block}
+<end_of_reddit>
 
 {get_language_instruction()}"""
 
@@ -201,6 +197,7 @@ def create_social_media_analyst(llm):
         Import :func:`create_sentiment_analyst` directly instead.
     """
     import warnings
+
     warnings.warn(
         "create_social_media_analyst is deprecated and will be removed in a "
         "future version. Use create_sentiment_analyst instead.",
